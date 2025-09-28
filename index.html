@@ -1,124 +1,193 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<title>Kitchen Billing System</title>
-<style>
-body{font-family:Arial; max-width:900px; margin:20px auto;}
-h1{text-align:center;}
-table{width:100%; border-collapse: collapse; margin-top:15px;}
-th,td{border:1px solid #ccc; padding:8px;}
-input[type=text], input[type=number], input[type=email], select{width:100%; padding:6px;}
-button{padding:8px 12px; margin:5px 0;}
-.right{text-align:right;}
-.status{margin-top:10px;padding:10px; display:none; border-radius:5px;}
-.success{background:#e6ffed;color:#116530;border:1px solid #c7f0d2;}
-.error{background:#fff1f0;color:#7f1d1d;border:1px solid #f3c6c6;}
-</style>
+  <meta charset="UTF-8">
+  <title>Kitchen Billing System</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  <style>
+    body {
+      font-family: Arial;
+      max-width: 900px;
+      margin: 20px auto;
+    }
+
+    h1 {
+      text-align: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    th,
+    td {
+      border: 1px solid #ccc;
+      padding: 8px;
+    }
+
+    input[type=text],
+    input[type=number],
+    input[type=email],
+    select {
+      width: 100%;
+      padding: 6px;
+    }
+
+    button {
+      padding: 8px 12px;
+      margin: 5px 0;
+    }
+
+    .right {
+      text-align: right;
+    }
+  </style>
 </head>
+
 <body>
-<h1>Kitchen Billing System</h1>
+  <h1>Kitchen Billing System</h1>
 
-<label>Customer Name</label><input type="text" id="name">
-<label>Customer Email</label><input type="email" id="email">
-<label>Payment Status</label>
-<select id="paymentStatus">
-<option value="Pending">Pending</option>
-<option value="Paid">Paid</option>
-</select>
-<label>Notes</label><input type="text" id="notes">
+  <label>Customer Name</label>
+  <input type="text" id="name">
 
-<table id="itemsTable">
-<thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th><th>Action</th></tr></thead>
-<tbody></tbody>
-</table>
-<button type="button" onclick="addItemRow()">+ Add Item</button>
+  <label>Customer Email</label>
+  <input type="email" id="email">
 
-<p class="right"><b>Subtotal: ₹<span id="subtotal">0</span></b></p>
-<p class="right"><b>Discount: ₹<input type="number" id="discount" value="0" onchange="calculateTotals()"></b></p>
-<p class="right"><b>Tax: ₹<input type="number" id="tax" value="0" onchange="calculateTotals()"></b></p>
-<p class="right"><b>Grand Total: ₹<span id="grandTotal">0</span></b></p>
+  <label>Payment Status</label>
+  <select id="paymentStatus">
+    <option value="Pending">Pending</option>
+    <option value="Paid">Paid</option>
+  </select>
 
-<button id="saveBtn">Generate Invoice</button>
-<div id="status" class="status"></div>
+  <label>Notes</label>
+  <input type="text" id="notes">
+
+  <table id="itemsTable">
+    <thead>
+      <tr>
+        <th>Item</th>
+        <th>Qty</th>
+        <th>Price</th>
+        <th>Total</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+  <button type="button" onclick="addItemRow()">+ Add Item</button>
+
+  <p class="right"><b>Subtotal: ₹<span id="subtotal">0</span></b></p>
+  <p class="right"><b>Discount: ₹<input type="number" id="discount" value="0" onchange="calculateTotals()"></b></p>
+  <p class="right"><b>Tax: ₹<input type="number" id="tax" value="0" onchange="calculateTotals()"></b></p>
+  <p class="right"><b>Grand Total: ₹<span id="grandTotal">0</span></b></p>
+
+  <button id="saveBtn">Generate Invoice</button>
 
 <script>
-const SCRIPT_URL="https://script.google.com/macros/s/AKfycbwCASeFWl3mhjF451lz_4m-z3x4J_Jf1UhqSWeKKgCRJ50kLSKvmAMd4RtowbHSEMWP/exec"; // Replace with your Web App URL
+const API_PROXY_URL = "/api/invoice"; // Vercel proxy endpoint
 
-function addItemRow(name='', qty=1, price=0){
-  const tbody=document.querySelector("#itemsTable tbody");
-  const row=document.createElement("tr");
-  row.innerHTML=`
+// Add item row
+function addItemRow(name='', qty=1, price=0) {
+  const tbody = document.querySelector("#itemsTable tbody");
+  const row = document.createElement("tr");
+  row.innerHTML = `
     <td><input type="text" value="${name}" class="itemName" placeholder="Item"></td>
     <td><input type="number" value="${qty}" class="itemQty" min="1" onchange="calculateTotals()"></td>
     <td><input type="number" value="${price}" class="itemPrice" min="0" onchange="calculateTotals()"></td>
     <td class="itemTotal">0</td>
-    <td><button type="button" onclick="removeItemRow(this)">-</button></td>`;
-  tbody.appendChild(row); calculateTotals();
-}
-function removeItemRow(btn){btn.closest("tr").remove();calculateTotals();}
-function calculateTotals(){
-  let subtotal=0;
-  document.querySelectorAll("#itemsTable tbody tr").forEach(row=>{
-    const qty=parseFloat(row.querySelector(".itemQty").value)||0;
-    const price=parseFloat(row.querySelector(".itemPrice").value)||0;
-    const total=qty*price;
-    row.querySelector(".itemTotal").innerText=total;
-    subtotal+=total;
-  });
-  const discount=parseFloat(document.getElementById("discount").value)||0;
-  const tax=parseFloat(document.getElementById("tax").value)||0;
-  document.getElementById("subtotal").innerText=subtotal;
-  document.getElementById("grandTotal").innerText=subtotal-discount+tax;
+    <td><button type="button" onclick="removeItemRow(this)">-</button></td>
+  `;
+  tbody.appendChild(row);
+  calculateTotals();
 }
 
-document.getElementById("saveBtn").addEventListener("click", async function(){
-  const items=[];
-  document.querySelectorAll("#itemsTable tbody tr").forEach(row=>{
-    const name=row.querySelector(".itemName").value;
-    const qty=parseFloat(row.querySelector(".itemQty").value)||0;
-    const price=parseFloat(row.querySelector(".itemPrice").value)||0;
-    if(name && qty>0 && price>=0){items.push({name,qty,price});}
+// Remove row
+function removeItemRow(btn) {
+  btn.closest("tr").remove();
+  calculateTotals();
+}
+
+// Calculate totals
+function calculateTotals() {
+  let subtotal = 0;
+  document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
+    const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
+    const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
+    const total = qty * price;
+    row.querySelector(".itemTotal").innerText = total;
+    subtotal += total;
   });
-  const payload={
-    name:document.getElementById("name").value.trim(),
-    email:document.getElementById("email").value.trim(),
-    items:items,
-    subtotal:parseFloat(document.getElementById("subtotal").innerText),
-    discount:parseFloat(document.getElementById("discount").value),
-    tax:parseFloat(document.getElementById("tax").value),
-    grandTotal:parseFloat(document.getElementById("grandTotal").innerText),
-    paymentStatus:document.getElementById("paymentStatus").value,
-    notes:document.getElementById("notes").value.trim()
+  const discount = parseFloat(document.getElementById("discount").value) || 0;
+  const tax = parseFloat(document.getElementById("tax").value) || 0;
+  document.getElementById("subtotal").innerText = subtotal;
+  document.getElementById("grandTotal").innerText = subtotal - discount + tax;
+}
+
+// Submit invoice
+async function submitInvoice() {
+  const items = [];
+  document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
+    const name = row.querySelector(".itemName").value.trim();
+    const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
+    const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
+    if(name && qty>0 && price>=0) items.push({name, qty, price});
+  });
+
+  if(!document.getElementById("name").value.trim()){ alert("Enter customer name"); return; }
+  if(items.length===0){ alert("Add at least 1 item"); return; }
+
+  const data = {
+    name: document.getElementById("name").value.trim(),
+    email: document.getElementById("email").value.trim(),
+    paymentStatus: document.getElementById("paymentStatus").value,
+    notes: document.getElementById("notes").value.trim(),
+    subtotal: parseFloat(document.getElementById("subtotal").innerText),
+    discount: parseFloat(document.getElementById("discount").value),
+    tax: parseFloat(document.getElementById("tax").value),
+    grandTotal: parseFloat(document.getElementById("grandTotal").innerText),
+    items
   };
-  if(!payload.name){showStatus("Enter customer name",true);return;}
-  if(items.length===0){showStatus("Add at least 1 item",true);return;}
-  const btn=document.getElementById("saveBtn"); btn.disabled=true; btn.innerText="Saving...";
-  try{
-    const resp=await fetch(SCRIPT_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
-    const data=await resp.json();
-    if(data.result==="success"){showStatus(`✅ Invoice ${data.invoice} generated & emailed!`,false);resetForm();}
-    else showStatus(`❌ Error: ${data.error||JSON.stringify(data)}`,true);
-  }catch(err){showStatus(`❌ Network error: ${err}`,true);}
-  finally{btn.disabled=false; btn.innerText="Generate Invoice";}
-});
 
-function showStatus(msg,isError){
-  const s=document.getElementById("status");
-  s.className="status "+(isError?"error":"success"); s.innerText=msg; s.style.display="block";
+  try {
+    const response = await fetch(API_PROXY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data)
+    });
+
+    const text = await response.text(); // GAS returns HTML
+    document.body.insertAdjacentHTML("beforeend", `<div style="margin-top:20px;">${text}</div>`);
+
+    resetForm();
+  } catch(err) {
+    alert("Error submitting invoice: " + err.message);
+    console.error(err);
+  }
 }
 
-function resetForm(){
-  document.getElementById("name").value="";
-  document.getElementById("email").value="";
-  document.getElementById("notes").value="";
-  document.getElementById("discount").value="0";
-  document.getElementById("tax").value="0";
-  document.getElementById("paymentStatus").value="Pending";
-  document.querySelector("#itemsTable tbody").innerHTML=""; addItemRow(); calculateTotals();
+// Reset form
+function resetForm() {
+  document.getElementById("name").value = "";
+  document.getElementById("email").value = "";
+  document.getElementById("notes").value = "";
+  document.getElementById("discount").value = "0";
+  document.getElementById("tax").value = "0";
+  document.getElementById("paymentStatus").value = "Pending";
+  document.querySelector("#itemsTable tbody").innerHTML = "";
+  addItemRow();
+  calculateTotals();
 }
 
+// Button click
+document.getElementById("saveBtn").addEventListener("click", submitInvoice);
+
+// Initialize
 addItemRow();
 </script>
+
 </body>
+
 </html>
