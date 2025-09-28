@@ -87,7 +87,6 @@
   <button id="saveBtn">Generate Invoice</button>
 
 <script>
-const API_PROXY_URL = "/api/invoice"; // Vercel proxy endpoint
 
 // Add item row
 function addItemRow(name='', qty=1, price=0) {
@@ -127,6 +126,8 @@ function calculateTotals() {
 }
 
 // Submit invoice
+const API_PROXY_URL = "https://flavory-bong.vercel.app//api/invoice";
+
 async function submitInvoice() {
   const items = [];
   document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
@@ -139,7 +140,7 @@ async function submitInvoice() {
   if(!document.getElementById("name").value.trim()){ alert("Enter customer name"); return; }
   if(items.length===0){ alert("Add at least 1 item"); return; }
 
-  const data = {
+  const payload = {
     name: document.getElementById("name").value.trim(),
     email: document.getElementById("email").value.trim(),
     paymentStatus: document.getElementById("paymentStatus").value,
@@ -148,25 +149,21 @@ async function submitInvoice() {
     discount: parseFloat(document.getElementById("discount").value),
     tax: parseFloat(document.getElementById("tax").value),
     grandTotal: parseFloat(document.getElementById("grandTotal").innerText),
-    items
+    items: JSON.stringify(items) // stringified for Apps Script
   };
 
-  try {
-    const response = await fetch(API_PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data)
-    });
+  const res = await fetch(API_PROXY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
 
-    const text = await response.text(); // GAS returns HTML
-    document.body.insertAdjacentHTML("beforeend", `<div style="margin-top:20px;">${text}</div>`);
-
-    resetForm();
-  } catch(err) {
-    alert("Error submitting invoice: " + err.message);
-    console.error(err);
-  }
+  const data = await res.json();
+  console.log(data); // success or error
+  if(data.result === "success") alert(`Invoice ${data.invoice} generated!`);
+  resetForm();
 }
+
 
 // Reset form
 function resetForm() {
