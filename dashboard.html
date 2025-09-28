@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Orders Dashboard</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<style>
+body{font-family:Arial;max-width:1000px;margin:20px auto;}
+h1{text-align:center;}
+table{width:100%;border-collapse: collapse;margin-top:20px;}
+th,td{border:1px solid #ccc;padding:8px;}
+input[type=text], input[type=date], select{padding:5px;margin-right:10px;}
+button{padding:5px 10px;margin:2px;}
+</style>
+</head>
+<body>
+<h1>Orders Dashboard</h1>
+
+<label>Search:</label><input type="text" id="searchInput" placeholder="Name/Email">
+<label>Payment:</label>
+<select id="paymentFilter"><option value="">All</option><option value="Paid">Paid</option><option value="Pending">Pending</option></select>
+<label>Date From:</label><input type="date" id="dateFrom">
+<label>To:</label><input type="date" id="dateTo">
+<button onclick="loadOrders()">Filter</button>
+<button onclick="loadOrders(true)">Reset</button>
+
+<table id="ordersTable">
+<thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Email</th><th>Items</th><th>Total</th><th>Payment</th><th>Action</th></tr></thead>
+<tbody></tbody>
+</table>
+
+<p id="summary"></p>
+
+<script>
+const SCRIPT_URL="https://script.google.com/macros/s/AKfycbzn8s7dmduouZTOi9PjxRdjZ399XrZ9VD8Z5EgwK__tLD1L5LFIHeY9xeJSTg6GQGGqvg/exec"; // Replace
+
+async function loadOrders(reset=false){
+  const tbody=document.querySelector("#ordersTable tbody"); tbody.innerHTML="Loading...";
+  let response=await fetch(SCRIPT_URL); let data=await response.json();
+  if(reset){document.getElementById("searchInput").value=""; document.getElementById("paymentFilter").value=""; document.getElementById("dateFrom").value=""; document.getElementById("dateTo").value="";}
+  const search=document.getElementById("searchInput").value.toLowerCase();
+  const payment=document.getElementById("paymentFilter").value;
+  const dateFrom=document.getElementById("dateFrom").value;
+  const dateTo=document.getElementById("dateTo").value;
+
+  if(search) data=data.filter(o=>o.customerName.toLowerCase().includes(search)||(o.email||"").toLowerCase().includes(search));
+  if(payment) data=data.filter(o=>o.paymentStatus===payment);
+  if(dateFrom) data=data.filter(o=>new Date(o.date)>=new Date(dateFrom));
+  if(dateTo) data=data.filter(o=>new Date(o.date)<=new Date(dateTo));
+
+  tbody.innerHTML="";
+  let totalSales=0;
+  data.forEach(o=>{
+    totalSales+=o.grandTotal;
+    const itemsStr=(o.items||[]).map(i=>`${i.name} x${i.qty}`).join(", ");
+    const row=document.createElement("tr");
+    row.innerHTML=`<td>${new Date(o.date).toLocaleString()}</td><td>${o.invoiceNo}</td><td>${o.customerName}</td><td>${o.email||""}</td><td>${itemsStr}</td><td>₹${o.grandTotal}</td><td>${o.paymentStatus}</td><td><button onclick="downloadInvoice('${o.invoiceNo}')">Download PDF</button></td>`;
+    tbody.appendChild(row);
+  });
+  document.getElementById("summary").innerText=`Total Orders: ${data.length}, Total Sales: ₹${totalSales}`;
+}
+
+async function downloadInvoice(invoiceNo){
+  try{
+    const response=await fetch(`${SCRIPT_URL}?invoice=${invoiceNo}`);
+    const data=await response.json();
+    if(data.url){window.open(data.url,"_blank");}
+    else alert(data.error||"Invoice PDF not found");
+  }catch(err){alert("Error fetching PDF: "+err);}
+}
+
+// Load dashboard on page load
+loadOrders();
+</script>
+</body>
+</html>
