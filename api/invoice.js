@@ -1,6 +1,6 @@
 import fetch from "node-fetch";
 
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyI-XsEIekyrKiXdsRL9wDDNe4gARCdzdGde50nEuZPhtpuU3B3M5B5E2iCylVvVhQJhA/exec";
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbze0Q0vWoKQI4DqQEMwOKUKYqREJyqLhUlCt45xRtLEjhikq1PxWsEc4NqjBJ6zT4m7bg/exec";
 
 export default async function handler(req, res) {
   // 1️⃣ Handle CORS preflight
