@@ -1,9 +1,9 @@
 import fetch from "node-fetch";
 
-export default async function handler(req, res) {
-  const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyI-XsEIekyrKiXdsRL9wDDNe4gARCdzdGde50nEuZPhtpuU3B3M5B5E2iCylVvVhQJhA/exec";
+const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyI-XsEIekyrKiXdsRL9wDDNe4gARCdzdGde50nEuZPhtpuU3B3M5B5E2iCylVvVhQJhA/exec";
 
-  // Handle CORS preflight
+export default async function handler(req, res) {
+  // 1️⃣ Handle CORS preflight
   if (req.method === "OPTIONS") {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -11,32 +11,36 @@ export default async function handler(req, res) {
     return res.status(200).send("");
   }
 
+  // 2️⃣ Only POST allowed
   if (req.method !== "POST") {
     return res.status(405).send("Method Not Allowed");
   }
 
   try {
-    // Convert JSON body to URLSearchParams for Apps Script
-    const params = new URLSearchParams();
-    for (const key in req.body) {
-      if (typeof req.body[key] === "object") {
-        params.append(key, JSON.stringify(req.body[key])); // stringify objects/arrays
-      } else {
-        params.append(key, req.body[key]);
-      }
-    }
+    console.log("Received body:", req.body);
 
+    // 3️⃣ Convert JSON body to URL-encoded form
+    const formBody = Object.entries(req.body)
+      .map(([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(typeof value === "object" ? JSON.stringify(value) : value)}`
+      )
+      .join("&");
+
+    // 4️⃣ Send to Apps Script
     const response = await fetch(WEBAPP_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: params.toString()
+      body: formBody
     });
 
     const text = await response.text();
+
+    // 5️⃣ Return Apps Script response directly
     res.setHeader("Access-Control-Allow-Origin", "*");
     return res.status(200).send(text);
 
   } catch (err) {
+    console.error("Proxy error:", err);
     return res.status(500).json({ result: "error", message: err.message });
   }
 }
