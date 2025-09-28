@@ -2,7 +2,6 @@ export default async function handler(req, res) {
   const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyrj-C-scbx7i2dJoNNCOyvP539uS-yGYhMW1TQLhwFZGONxzIng_BPAqyxS4pl72EJJQ/exec"; // replace
 
   if (req.method === "OPTIONS") {
-    // Handle CORS preflight
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -14,7 +13,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Convert JSON body to URLSearchParams for Apps Script
+    // Convert form-encoded body for Apps Script
     const params = new URLSearchParams(req.body);
 
     const response = await fetch(WEBAPP_URL, {
