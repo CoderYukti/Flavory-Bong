@@ -1,34 +1,36 @@
-import fetch from "node-fetch";
-
 export default async function handler(req, res) {
   const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyrj-C-scbx7i2dJoNNCOyvP539uS-yGYhMW1TQLhwFZGONxzIng_BPAqyxS4pl72EJJQ/exec"; // replace
 
+  if (req.method === "OPTIONS") {
+    // Handle CORS preflight
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    return res.status(200).end();
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method Not Allowed" });
+  }
+
   try {
-    if (req.method === "POST") {
-      // Forward POST request to Google Apps Script
-      const response = await fetch(WEBAPP_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded", // Apps Script expects form data
-        },
-        body: new URLSearchParams(req.body),
-      });
+    // Convert JSON body to URLSearchParams for Apps Script
+    const params = new URLSearchParams(req.body);
 
-      const text = await response.text(); // Apps Script returns HTML output
-      res.setHeader("Access-Control-Allow-Origin", "*"); // optional if frontend is same domain
-      res.status(200).send(text);
+    const response = await fetch(WEBAPP_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: params.toString(),
+    });
 
-    } else if (req.method === "OPTIONS") {
-      // Preflight CORS
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-      res.status(200).send("");
-    } else {
-      res.status(405).send("Method Not Allowed");
-    }
+    const text = await response.text(); // Apps Script returns HTML
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.status(200).send(text);
 
   } catch (err) {
-    res.status(500).send(err.message);
+    console.error(err);
+    res.status(500).json({ error: err.message });
   }
 }
