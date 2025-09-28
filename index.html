@@ -87,7 +87,6 @@
   <button id="saveBtn">Generate Invoice</button>
 
 <script>
-
 // Add item row
 function addItemRow(name='', qty=1, price=0) {
   const tbody = document.querySelector("#itemsTable tbody");
@@ -116,29 +115,32 @@ function calculateTotals() {
     const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
     const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
     const total = qty * price;
-    row.querySelector(".itemTotal").innerText = total;
+    row.querySelector(".itemTotal").innerText = total.toFixed(2);
     subtotal += total;
   });
   const discount = parseFloat(document.getElementById("discount").value) || 0;
   const tax = parseFloat(document.getElementById("tax").value) || 0;
-  document.getElementById("subtotal").innerText = subtotal;
-  document.getElementById("grandTotal").innerText = subtotal - discount + tax;
+  document.getElementById("subtotal").innerText = subtotal.toFixed(2);
+  document.getElementById("grandTotal").innerText = (subtotal - discount + tax).toFixed(2);
 }
 
 // Submit invoice
 const API_PROXY_URL = "https://flavory-bong.vercel.app/api/invoice";
 
 async function submitInvoice() {
+  const saveBtn = document.getElementById("saveBtn");
+  saveBtn.disabled = true;
+
   const items = [];
   document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
     const name = row.querySelector(".itemName").value.trim();
     const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
     const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
-    if(name && qty>0 && price>=0) items.push({name, qty, price});
+    if(name && qty > 0 && price >= 0) items.push({ name, qty, price });
   });
 
-  if(!document.getElementById("name").value.trim()){ alert("Enter customer name"); return; }
-  if(items.length===0){ alert("Add at least 1 item"); return; }
+  if(!document.getElementById("name").value.trim()) { alert("Enter customer name"); saveBtn.disabled = false; return; }
+  if(items.length === 0) { alert("Add at least 1 item"); saveBtn.disabled = false; return; }
 
   const payload = {
     name: document.getElementById("name").value.trim(),
@@ -149,21 +151,39 @@ async function submitInvoice() {
     discount: parseFloat(document.getElementById("discount").value),
     tax: parseFloat(document.getElementById("tax").value),
     grandTotal: parseFloat(document.getElementById("grandTotal").innerText),
-    items: JSON.stringify(items) // stringified for Apps Script
+    items // send as proper array
   };
 
-  const res = await fetch(API_PROXY_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  try {
+    const res = await fetch(API_PROXY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
 
-  const data = await res.json();
-  console.log(data); // success or error
-  if(data.result === "success") alert(`Invoice ${data.invoice} generated!`);
-  resetForm();
+    const text = await res.text(); // get raw text
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      alert("Server returned invalid response: " + text);
+      saveBtn.disabled = false;
+      return;
+    }
+
+    if(data.result === "success") {
+      alert(`Invoice ${data.invoice} generated!`);
+      resetForm();
+    } else {
+      alert("Error: " + (data.message || "Unknown error"));
+    }
+
+  } catch(err) {
+    alert("Network error: " + err.message);
+  } finally {
+    saveBtn.disabled = false;
+  }
 }
-
 
 // Reset form
 function resetForm() {
@@ -178,13 +198,10 @@ function resetForm() {
   calculateTotals();
 }
 
-// Button click
-document.getElementById("saveBtn").addEventListener("click", submitInvoice);
-
 // Initialize
 addItemRow();
+document.getElementById("saveBtn").addEventListener("click", submitInvoice);
 </script>
 
 </body>
-
 </html>
