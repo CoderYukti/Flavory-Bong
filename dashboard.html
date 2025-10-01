@@ -1,76 +1,306 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
+
 <head>
-<meta charset="UTF-8">
-<title>Orders Dashboard</title>
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<style>
-body{font-family:Arial;max-width:1000px;margin:20px auto;}
-h1{text-align:center;}
-table{width:100%;border-collapse: collapse;margin-top:20px;}
-th,td{border:1px solid #ccc;padding:8px;}
-input[type=text], input[type=date], select{padding:5px;margin-right:10px;}
-button{padding:5px 10px;margin:2px;}
-</style>
+    <title>Live Orders Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        input,
+        select,
+        button {
+            padding: 5px;
+            margin: 5px;
+        }
+
+        .pagination {
+            margin-top: 10px;
+        }
+
+        .pagination button {
+            margin: 0 2px;
+            padding: 5px 10px;
+        }
+
+        .active-page {
+            font-weight: bold;
+        }
+
+        .pending {
+            background-color: #ffe6e6;
+        }
+
+        .paid {
+            background-color: #e6ffe6;
+        }
+
+        .total-row td {
+            font-weight: bold;
+            background-color: #f9f9f9;
+        }
+
+        .item-link {
+            text-transform: capitalize;
+        }
+    </style>
 </head>
+
 <body>
-<h1>Orders Dashboard</h1>
+    <h1>Live Orders Dashboard</h1>
 
-<label>Search:</label><input type="text" id="searchInput" placeholder="Name/Email">
-<label>Payment:</label>
-<select id="paymentFilter"><option value="">All</option><option value="Paid">Paid</option><option value="Pending">Pending</option></select>
-<label>Date From:</label><input type="date" id="dateFrom">
-<label>To:</label><input type="date" id="dateTo">
-<button onclick="loadOrders()">Filter</button>
-<button onclick="loadOrders(true)">Reset</button>
+    <!-- Filters -->
+    <label>Search:</label>
+    <input type="text" id="searchInput" placeholder="Name / Email">
+    <label>Payment:</label>
+    <select id="paymentFilter">
+        <option value="">All</option>
+        <option value="Paid">Paid</option>
+        <option value="Pending">Pending</option>
+    </select>
+    <label>Date From:</label>
+    <input type="date" id="dateFrom">
+    <label>To:</label>
+    <input type="date" id="dateTo">
+    <button onclick="loadOrders()">Filter</button>
+    <button onclick="loadOrders(true)">Reset</button>
 
-<table id="ordersTable">
-<thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Email</th><th>Items</th><th>Total</th><th>Payment</th><th>Action</th></tr></thead>
-<tbody></tbody>
-</table>
+    <table id="sheetTable">
+        <thead></thead>
+        <tbody></tbody>
+        <tfoot></tfoot>
+    </table>
 
-<p id="summary"></p>
+    <div class="pagination" id="pagination"></div>
 
-<script>
-const SCRIPT_URL="https://script.google.com/macros/s/AKfycbzn8s7dmduouZTOi9PjxRdjZ399XrZ9VD8Z5EgwK__tLD1L5LFIHeY9xeJSTg6GQGGqvg/exec"; // Replace
+    <script>
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyhrOs3R36wmTExhZYhaAl50DNHpUVOfOrI9Ces_yCN4K2Jyyh-96cHzi3GBwFNqPXr/exec';
+        const rowsPerPage = 10;
 
-async function loadOrders(reset=false){
-  const tbody=document.querySelector("#ordersTable tbody"); tbody.innerHTML="Loading...";
-  let response=await fetch(SCRIPT_URL); let data=await response.json();
-  if(reset){document.getElementById("searchInput").value=""; document.getElementById("paymentFilter").value=""; document.getElementById("dateFrom").value=""; document.getElementById("dateTo").value="";}
-  const search=document.getElementById("searchInput").value.toLowerCase();
-  const payment=document.getElementById("paymentFilter").value;
-  const dateFrom=document.getElementById("dateFrom").value;
-  const dateTo=document.getElementById("dateTo").value;
+        let allData = [];
+        let filteredData = [];
+        let columns = [];
+        let currentPage = 1;
+        let sortColumn = '';
+        let sortAsc = true;
 
-  if(search) data=data.filter(o=>o.customerName.toLowerCase().includes(search)||(o.email||"").toLowerCase().includes(search));
-  if(payment) data=data.filter(o=>o.paymentStatus===payment);
-  if(dateFrom) data=data.filter(o=>new Date(o.date)>=new Date(dateFrom));
-  if(dateTo) data=data.filter(o=>new Date(o.date)<=new Date(dateTo));
+        // Fetch orders from Apps Script
+        async function fetchOrders() {
+            try {
+                const res = await fetch(APPS_SCRIPT_URL);
+                const data = await res.json();
+                allData = data.map(row => ({
+                    date: row.date,
+                    invoiceNo: row.invoiceNo,
+                    customerName: row.customerName,
+                    email: row.email,
+                    items: row.items,
+                    subtotal: parseFloat(row.subtotal) || 0,
+                    discount: parseFloat(row.discount) || 0,
+                    tax: parseFloat(row.tax) || 0,
+                    grandTotal: parseFloat(row.grandTotal) || 0,
+                    paymentStatus: row.paymentStatus,
+                    notes: row.notes
+                }));
+                columns = ["Date", "Invoice No", "Customer Name", "Email", "Items", "Subtotal", "Discount", "Tax", "Grand Total", "Payment Status", "Notes", "Invoice PDF"];
+                createTableHeader(columns);
+                loadOrders(true);
+            } catch (err) {
+                console.error(err);
+            }
+        }
 
-  tbody.innerHTML="";
-  let totalSales=0;
-  data.forEach(o=>{
-    totalSales+=o.grandTotal;
-    const itemsStr=(o.items||[]).map(i=>`${i.name} x${i.qty}`).join(", ");
-    const row=document.createElement("tr");
-    row.innerHTML=`<td>${new Date(o.date).toLocaleString()}</td><td>${o.invoiceNo}</td><td>${o.customerName}</td><td>${o.email||""}</td><td>${itemsStr}</td><td>₹${o.grandTotal}</td><td>${o.paymentStatus}</td><td><button onclick="downloadInvoice('${o.invoiceNo}')">Download PDF</button></td>`;
-    tbody.appendChild(row);
-  });
-  document.getElementById("summary").innerText=`Total Orders: ${data.length}, Total Sales: ₹${totalSales}`;
-}
+        // Create table header
+        function createTableHeader(cols) {
+            const thead = document.querySelector('#sheetTable thead');
+            thead.innerHTML = '';
+            const tr = document.createElement('tr');
+            cols.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                if (col !== "Invoice PDF") th.addEventListener('click', () => sortByColumn(col));
+                tr.appendChild(th);
+            });
+            thead.appendChild(tr);
+        }
 
-async function downloadInvoice(invoiceNo){
-  try{
-    const response=await fetch(`${SCRIPT_URL}?invoice=${invoiceNo}`);
-    const data=await response.json();
-    if(data.url){window.open(data.url,"_blank");}
-    else alert(data.error||"Invoice PDF not found");
-  }catch(err){alert("Error fetching PDF: "+err);}
-}
+        // Display table
+        function displayTable() {
+            const tbody = document.querySelector('#sheetTable tbody');
+            const tfoot = document.querySelector('#sheetTable tfoot');
+            tbody.innerHTML = '';
+            tfoot.innerHTML = '';
 
-// Load dashboard on page load
-loadOrders();
-</script>
+            const start = (currentPage - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const pageData = filteredData.slice(start, end);
+
+            pageData.forEach(row => {
+                const tr = document.createElement('tr');
+                if (row.paymentStatus === "Pending") tr.classList.add('pending');
+                else if (row.paymentStatus === "Paid") tr.classList.add('paid');
+
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    if (col === "Invoice PDF") {
+                        const btn = document.createElement('button');
+                        btn.textContent = 'Download';
+                        btn.onclick = () => downloadInvoice(row.invoiceNo);
+                        td.appendChild(btn);
+                    } else if (col === "Items") {
+                        const items = (row.items || '').split(',').map(i => i.trim()).sort();
+                        td.innerHTML = items.map(i => `<span class="item-link">${i}</span>`).join('<br>');
+                    } else if (col === "Subtotal" || col === "Discount" || col === "Tax" || col === "Grand Total") {
+                        td.textContent = `₹${parseFloat(row[convertColumn(col)]).toFixed(2)}`;
+                    } else if (col === "Date") {
+                        const date = new Date(row.date);
+                        td.textContent = !isNaN(date) ? date.toLocaleDateString('en-GB') : row.date;
+                    } else {
+                        td.textContent = row[convertColumn(col)];
+                        if (td.textContent.length > 30) {
+                            td.title = td.textContent;
+                            td.textContent = td.textContent.slice(0, 30) + '...';
+                        }
+                    }
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+
+            // Grand Total in footer
+            const total = filteredData.reduce((sum, row) => sum + (parseFloat(row.grandTotal) || 0), 0);
+            const trTotal = document.createElement('tr');
+            trTotal.classList.add('total-row');
+            const tdTotal = document.createElement('td');
+            tdTotal.colSpan = columns.length;
+            tdTotal.textContent = 'Grand Total: ₹' + total.toFixed(2);
+            trTotal.appendChild(tdTotal);
+            tfoot.appendChild(trTotal);
+
+            renderPagination();
+        }
+
+        // Convert column display name to object key
+        function convertColumn(col) {
+            return {
+                "Date": "date",
+                "Invoice No": "invoiceNo",
+                "Customer Name": "customerName",
+                "Email": "email",
+                "Items": "items",
+                "Subtotal": "subtotal",
+                "Discount": "discount",
+                "Tax": "tax",
+                "Grand Total": "grandTotal",
+                "Payment Status": "paymentStatus",
+                "Notes": "notes"
+            }[col];
+        }
+
+        // Pagination
+        function renderPagination() {
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+            const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.textContent = i;
+                if (i === currentPage) btn.classList.add('active-page');
+                btn.addEventListener('click', () => { currentPage = i; displayTable(); });
+                pagination.appendChild(btn);
+            }
+        }
+
+        // Sorting
+        function sortByColumn(col) {
+            const key = convertColumn(col);
+            if (sortColumn === key) sortAsc = !sortAsc;
+            else { sortColumn = key; sortAsc = true; }
+
+            filteredData.sort((a, b) => {
+                let valA = a[key] || '';
+                let valB = b[key] || '';
+                if (!isNaN(Date.parse(valA)) && !isNaN(Date.parse(valB))) {
+                    valA = new Date(valA); valB = new Date(valB);
+                } else if (!isNaN(valA) && !isNaN(valB)) {
+                    valA = Number(valA); valB = Number(valB);
+                }
+                if (valA < valB) return sortAsc ? -1 : 1;
+                if (valA > valB) return sortAsc ? 1 : -1;
+                return 0;
+            });
+
+            currentPage = 1; displayTable();
+        }
+
+        // Filtering
+        function loadOrders(reset = false) {
+            if (reset) {
+                document.getElementById('searchInput').value = '';
+                document.getElementById('paymentFilter').value = '';
+                document.getElementById('dateFrom').value = '';
+                document.getElementById('dateTo').value = '';
+                filteredData = [...allData];
+            } else {
+                const searchValue = document.getElementById('searchInput').value.toLowerCase();
+                const paymentValue = document.getElementById('paymentFilter').value;
+                const dateFrom = document.getElementById('dateFrom').value ? new Date(document.getElementById('dateFrom').value) : null;
+                const dateTo = document.getElementById('dateTo').value ? new Date(document.getElementById('dateTo').value) : null;
+
+                filteredData = allData.filter(row => {
+                    const nameMatch = (row.customerName || '').toLowerCase().includes(searchValue) || (row.email || '').toLowerCase().includes(searchValue);
+                    const paymentMatch = paymentValue ? row.paymentStatus === paymentValue : true;
+                    let dateMatch = true;
+                    if (dateFrom || dateTo) {
+                        const rowDate = row.date ? new Date(row.date) : null;
+                        if (rowDate) {
+                            if (dateFrom && rowDate < dateFrom) dateMatch = false;
+                            if (dateTo && rowDate > dateTo) dateMatch = false;
+                        } else dateMatch = false;
+                    }
+                    return nameMatch && paymentMatch && dateMatch;
+                });
+            }
+            currentPage = 1; displayTable();
+        }
+
+        // Download invoice
+        async function downloadInvoice(invoiceNo) {
+            try {
+                const res = await fetch(`${APPS_SCRIPT_URL}?invoice=${invoiceNo}`);
+                const data = await res.json();
+                if (data.url) window.open(data.url, '_blank');
+                else alert("Invoice PDF not found.");
+            } catch (err) {
+                console.error(err);
+                alert("Error fetching invoice PDF.");
+            }
+        }
+
+        // Filter as you type
+        document.getElementById('searchInput').addEventListener('input', () => loadOrders());
+
+        fetchOrders();
+    </script>
 </body>
+
 </html>

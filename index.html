@@ -50,6 +50,8 @@
 <body>
   <h1>Kitchen Billing System</h1>
 
+
+  <div id="message"></div>
   <label>Customer Name</label>
   <input type="text" id="name">
 
@@ -84,124 +86,140 @@
   <p class="right"><b>Tax: ₹<input type="number" id="tax" value="0" onchange="calculateTotals()"></b></p>
   <p class="right"><b>Grand Total: ₹<span id="grandTotal">0</span></b></p>
 
+  <!-- Hidden form for submission -->
+  <form id="invoiceForm" method="POST" target="_blank" style="display:none;">
+    <input type="hidden" name="name" id="formName">
+    <input type="hidden" name="email" id="formEmail">
+    <input type="hidden" name="paymentStatus" id="formPaymentStatus">
+    <input type="hidden" name="notes" id="formNotes">
+    <input type="hidden" name="subtotal" id="formSubtotal">
+    <input type="hidden" name="discount" id="formDiscount">
+    <input type="hidden" name="tax" id="formTax">
+    <input type="hidden" name="grandTotal" id="formGrandTotal">
+    <input type="hidden" name="items" id="formItems">
+  </form>
+
   <button id="saveBtn">Generate Invoice</button>
 
-<script>
-// Add item row
-function addItemRow(name='', qty=1, price=0) {
-  const tbody = document.querySelector("#itemsTable tbody");
-  const row = document.createElement("tr");
-  row.innerHTML = `
+  <script>
+    const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyhrOs3R36wmTExhZYhaAl50DNHpUVOfOrI9Ces_yCN4K2Jyyh-96cHzi3GBwFNqPXr/exec"; // Replace
+
+    // Add item row
+    function addItemRow(name = '', qty = 1, price = 0) {
+      const tbody = document.querySelector("#itemsTable tbody");
+      const row = document.createElement("tr");
+      row.innerHTML = `
     <td><input type="text" value="${name}" class="itemName" placeholder="Item"></td>
     <td><input type="number" value="${qty}" class="itemQty" min="1" onchange="calculateTotals()"></td>
     <td><input type="number" value="${price}" class="itemPrice" min="0" onchange="calculateTotals()"></td>
     <td class="itemTotal">0</td>
     <td><button type="button" onclick="removeItemRow(this)">-</button></td>
   `;
-  tbody.appendChild(row);
-  calculateTotals();
-}
-
-// Remove row
-function removeItemRow(btn) {
-  btn.closest("tr").remove();
-  calculateTotals();
-}
-
-// Calculate totals
-function calculateTotals() {
-  let subtotal = 0;
-  document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
-    const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
-    const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
-    const total = qty * price;
-    row.querySelector(".itemTotal").innerText = total.toFixed(2);
-    subtotal += total;
-  });
-  const discount = parseFloat(document.getElementById("discount").value) || 0;
-  const tax = parseFloat(document.getElementById("tax").value) || 0;
-  document.getElementById("subtotal").innerText = subtotal.toFixed(2);
-  document.getElementById("grandTotal").innerText = (subtotal - discount + tax).toFixed(2);
-}
-
-// Submit invoice
-const API_PROXY_URL = "https://flavory-bong.vercel.app/api/invoice";
-
-async function submitInvoice() {
-  const saveBtn = document.getElementById("saveBtn");
-  saveBtn.disabled = true;
-
-  const items = [];
-  document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
-    const name = row.querySelector(".itemName").value.trim();
-    const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
-    const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
-    if(name && qty > 0 && price >= 0) items.push({ name, qty, price });
-  });
-
-  if(!document.getElementById("name").value.trim()) { alert("Enter customer name"); saveBtn.disabled = false; return; }
-  if(items.length === 0) { alert("Add at least 1 item"); saveBtn.disabled = false; return; }
-
-  const payload = {
-    name: document.getElementById("name").value.trim(),
-    email: document.getElementById("email").value.trim(),
-    paymentStatus: document.getElementById("paymentStatus").value,
-    notes: document.getElementById("notes").value.trim(),
-    subtotal: parseFloat(document.getElementById("subtotal").innerText),
-    discount: parseFloat(document.getElementById("discount").value),
-    tax: parseFloat(document.getElementById("tax").value),
-    grandTotal: parseFloat(document.getElementById("grandTotal").innerText),
-    items // send as proper array
-  };
-
-  try {
-    const res = await fetch(API_PROXY_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-
-    const text = await res.text(); // get raw text
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      alert("Server returned invalid response: " + text);
-      saveBtn.disabled = false;
-      return;
+      tbody.appendChild(row);
+      calculateTotals();
     }
 
-    if(data.result === "success") {
-      alert(`Invoice ${data.invoice} generated!`);
-      resetForm();
-    } else {
-      alert("Error: " + (data.message || "Unknown error"));
+    // Remove item row
+    function removeItemRow(btn) {
+      btn.closest("tr").remove();
+      calculateTotals();
     }
 
-  } catch(err) {
-    alert("Network error: " + err.message);
-  } finally {
-    saveBtn.disabled = false;
-  }
-}
+    // Calculate totals
+    function calculateTotals() {
+      let subtotal = 0;
+      document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
+        const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
+        const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
+        const total = qty * price;
+        row.querySelector(".itemTotal").innerText = total;
+        subtotal += total;
+      });
+      const discount = parseFloat(document.getElementById("discount").value) || 0;
+      const tax = parseFloat(document.getElementById("tax").value) || 0;
+      document.getElementById("subtotal").innerText = subtotal;
+      document.getElementById("grandTotal").innerText = subtotal - discount + tax;
+    }
 
-// Reset form
-function resetForm() {
-  document.getElementById("name").value = "";
-  document.getElementById("email").value = "";
-  document.getElementById("notes").value = "";
-  document.getElementById("discount").value = "0";
-  document.getElementById("tax").value = "0";
-  document.getElementById("paymentStatus").value = "Pending";
-  document.querySelector("#itemsTable tbody").innerHTML = "";
-  addItemRow();
-  calculateTotals();
-}
+    // Prepare and submit form
+    async function submitInvoice() {
+      const messageEl = document.getElementById("message");
+      messageEl.innerText = ""; // clear previous message
 
-// Initialize
-addItemRow();
-document.getElementById("saveBtn").addEventListener("click", submitInvoice);
-</script>
+      const items = [];
+      document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
+        const name = row.querySelector(".itemName").value.trim();
+        const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
+        const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
+        if (name && qty > 0 && price >= 0) items.push({ name, qty, price });
+      });
 
+      if (!document.getElementById("name").value.trim()) {
+        messageEl.style.color = "red";
+        messageEl.innerText = "Enter customer name";
+        return;
+      }
+      if (items.length === 0) {
+        messageEl.style.color = "red";
+        messageEl.innerText = "Add at least 1 item";
+        return;
+      }
+
+      const payload = {
+        name: document.getElementById("name").value.trim(),
+        email: document.getElementById("email").value.trim(),
+        paymentStatus: document.getElementById("paymentStatus").value,
+        notes: document.getElementById("notes").value.trim(),
+        subtotal: parseFloat(document.getElementById("subtotal").innerText),
+        discount: parseFloat(document.getElementById("discount").value),
+        tax: parseFloat(document.getElementById("tax").value),
+        grandTotal: parseFloat(document.getElementById("grandTotal").innerText),
+        items: JSON.stringify(items)
+      };
+
+      try {
+        const res = await fetch(WEBAPP_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams(payload).toString()
+        });
+
+        const data = await res.json();
+        if (data.result === "success") {
+          messageEl.style.color = "green";
+          messageEl.innerText = `✅ Invoice ${data.invoice} generated successfully!`;
+          resetForm();
+        } else {
+          messageEl.style.color = "red";
+          messageEl.innerText = "Error: " + data.message;
+        }
+      } catch (err) {
+        messageEl.style.color = "red";
+        messageEl.innerText = "Request failed: " + err.message;
+      }
+    }
+
+
+
+    // Reset form
+    function resetForm() {
+      document.getElementById("name").value = "";
+      document.getElementById("email").value = "";
+      document.getElementById("notes").value = "";
+      document.getElementById("discount").value = "0";
+      document.getElementById("tax").value = "0";
+      document.getElementById("paymentStatus").value = "Pending";
+      document.querySelector("#itemsTable tbody").innerHTML = "";
+      addItemRow();
+      calculateTotals();
+    }
+
+    // Button click
+    document.getElementById("saveBtn").addEventListener("click", submitInvoice);
+
+    // Initialize
+    addItemRow();
+  </script>
 </body>
+
 </html>
