@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Kitchen Billing System</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <style>
+        body {
+            font-family: Arial;
+            max-width: 900px;
+            margin: 20px auto;
+        }
+
+        h1 {
+            text-align: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+        }
+
+        input[type=text],
+        input[type=number],
+        input[type=email],
+        select {
+            width: 100%;
+            padding: 6px;
+        }
+
+        button {
+            padding: 8px 12px;
+            margin: 5px 0;
+        }
+
+        .right {
+            text-align: right;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Kitchen Billing System</h1>
+
+    <div id="message"></div>
+
+    <label>Customer Name</label>
+    <input type="text" id="name">
+
+    <label>Customer Email</label>
+    <input type="email" id="email">
+
+    <label>Payment Status</label>
+    <select id="paymentStatus">
+        <option value="Pending">Pending</option>
+        <option value="Paid">Paid</option>
+    </select>
+
+    <label>Notes</label>
+    <input type="text" id="notes">
+
+    <!-- Delivery Date and Time for Future Orders -->
+    <label>Delivery Date</label>
+    <input type="text" id="deliveryDate" placeholder="Select date">
+
+    <label>Delivery Time</label>
+    <input type="text" id="deliveryTime" placeholder="Select time">
+
+    <table id="itemsTable">
+        <thead>
+            <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <button type="button" onclick="addItemRow()">+ Add Item</button>
+
+    <p class="right"><b>Subtotal: ₹<span id="subtotal">0</span></b></p>
+    <p class="right"><b>Discount: ₹<input type="number" id="discount" value="0" onchange="calculateTotals()"></b></p>
+    <p class="right"><b>Tax: ₹<input type="number" id="tax" value="0" onchange="calculateTotals()"></b></p>
+    <p class="right"><b>Grand Total: ₹<span id="grandTotal">0</span></b></p>
+
+    <button type="button" id="saveFuture">Order Placed</button>
+
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script>
+        const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxmxXG1J8q4fIhwZc11yqC2nrJIHP6-DYqngwdwm52izG35rdDn_s1rAwk_92sOmRpv/exec";
+
+        // Initialize Flatpickr
+        flatpickr("#deliveryDate", { dateFormat: "d-M-Y" }); // dd-MMM-yyyy
+        flatpickr("#deliveryTime", { enableTime: true, noCalendar: true, dateFormat: "h:i K" }); // 12-hour AM/PM
+
+        function addItemRow(name = '', qty = 1, price = 0) {
+            const tbody = document.querySelector("#itemsTable tbody");
+            const row = document.createElement("tr");
+            row.innerHTML = `
+        <td><input type="text" value="${name}" class="itemName" placeholder="Item"></td>
+        <td><input type="number" value="${qty}" class="itemQty" min="1" onchange="calculateTotals()"></td>
+        <td><input type="number" value="${price}" class="itemPrice" min="0" onchange="calculateTotals()"></td>
+        <td class="itemTotal">0</td>
+        <td><button type="button" onclick="removeItemRow(this)">-</button></td>
+      `;
+            tbody.appendChild(row);
+            calculateTotals();
+        }
+
+        function removeItemRow(btn) {
+            btn.closest("tr").remove();
+            calculateTotals();
+        }
+
+        function calculateTotals() {
+            let subtotal = 0;
+            document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
+                const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
+                const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
+                const total = qty * price;
+                row.querySelector(".itemTotal").innerText = total;
+                subtotal += total;
+            });
+            const discount = parseFloat(document.getElementById("discount").value) || 0;
+            const tax = parseFloat(document.getElementById("tax").value) || 0;
+            document.getElementById("subtotal").innerText = subtotal;
+            document.getElementById("grandTotal").innerText = subtotal - discount + tax;
+        }
+
+        async function submitOrder() {
+            const messageEl = document.getElementById("message");
+            messageEl.innerText = "";
+
+            const items = [];
+            document.querySelectorAll("#itemsTable tbody tr").forEach(row => {
+                const name = row.querySelector(".itemName").value.trim();
+                const qty = parseFloat(row.querySelector(".itemQty").value) || 0;
+                const price = parseFloat(row.querySelector(".itemPrice").value) || 0;
+                if (name && qty > 0 && price >= 0) items.push({ name, qty, price });
+            });
+
+            if (!document.getElementById("name").value.trim()) {
+                messageEl.style.color = "red";
+                messageEl.innerText = "Enter customer name";
+                return;
+            }
+            if (items.length === 0) {
+                messageEl.style.color = "red";
+                messageEl.innerText = "Add at least 1 item";
+                return;
+            }
+
+            const payload = {
+                name: document.getElementById("name").value.trim(),
+                email: document.getElementById("email").value.trim(),
+                paymentStatus: document.getElementById("paymentStatus").value,
+                notes: document.getElementById("notes").value.trim(),
+                subtotal: parseFloat(document.getElementById("subtotal").innerText),
+                discount: parseFloat(document.getElementById("discount").value),
+                tax: parseFloat(document.getElementById("tax").value),
+                grandTotal: parseFloat(document.getElementById("grandTotal").innerText),
+                items: JSON.stringify(items),
+                deliveryDate: document.getElementById("deliveryDate").value || "",
+                deliveryTime: document.getElementById("deliveryTime").value || "",
+                isFutureOrder: "true"
+            };
+
+            try {
+                const res = await fetch(WEBAPP_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: new URLSearchParams(payload).toString()
+                });
+                const data = await res.json();
+                if (data.result === "success") {
+                    messageEl.style.color = "green";
+                    messageEl.innerText = "✅ Order saved successfully!";
+                    resetForm();
+                } else {
+                    messageEl.style.color = "red";
+                    messageEl.innerText = "Error: " + data.message;
+                }
+            } catch (err) {
+                messageEl.style.color = "red";
+                messageEl.innerText = "Request failed: " + err.message;
+            }
+        }
+
+        function resetForm() {
+            document.getElementById("name").value = "";
+            document.getElementById("email").value = "";
+            document.getElementById("notes").value = "";
+            document.getElementById("discount").value = "0";
+            document.getElementById("tax").value = "0";
+            document.getElementById("paymentStatus").value = "Pending";
+            document.getElementById("deliveryDate").value = "";
+            document.getElementById("deliveryTime").value = "";
+            document.querySelector("#itemsTable tbody").innerHTML = "";
+            addItemRow();
+            calculateTotals();
+        }
+
+        document.getElementById("saveFuture").addEventListener("click", submitOrder);
+
+        addItemRow();
+    </script>
+</body>
+
+</html>

@@ -102,7 +102,7 @@
   <button id="saveBtn">Generate Invoice</button>
 
   <script>
-    const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbyhrOs3R36wmTExhZYhaAl50DNHpUVOfOrI9Ces_yCN4K2Jyyh-96cHzi3GBwFNqPXr/exec"; // Replace
+    const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxmxXG1J8q4fIhwZc11yqC2nrJIHP6-DYqngwdwm52izG35rdDn_s1rAwk_92sOmRpv/exec"; // Replace
 
     // Add item row
     function addItemRow(name = '', qty = 1, price = 0) {
@@ -174,8 +174,10 @@
         discount: parseFloat(document.getElementById("discount").value),
         tax: parseFloat(document.getElementById("tax").value),
         grandTotal: parseFloat(document.getElementById("grandTotal").innerText),
-        items: JSON.stringify(items)
+        items: JSON.stringify(items),
+        isFuture: "false"   // ✅ always delivered tab
       };
+
 
       try {
         const res = await fetch(WEBAPP_URL, {

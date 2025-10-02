@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Live Orders Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        th {
+            background-color: #f2f2f2;
+        }
+
+        input,
+        select,
+        button {
+            padding: 5px;
+            margin: 5px;
+        }
+
+        .pagination {
+            margin-top: 10px;
+        }
+
+        .pagination button {
+            margin: 0 2px;
+            padding: 5px 10px;
+        }
+
+        .active-page {
+            font-weight: bold;
+        }
+
+        .pending {
+            background-color: #ffe6e6;
+        }
+
+        .paid {
+            background-color: #e6ffe6;
+        }
+
+        .total-row td {
+            font-weight: bold;
+            background-color: #f9f9f9;
+        }
+
+        .item-link {
+            text-transform: capitalize;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Live Orders Dashboard</h1>
+
+    <!-- Filters -->
+    <label>Search:</label>
+    <input type="text" id="searchInput" placeholder="Name / Email">
+    <label>Payment:</label>
+    <select id="paymentFilter">
+        <option value="">All</option>
+        <option value="Paid">Paid</option>
+        <option value="Pending">Pending</option>
+    </select>
+    <label>Date From:</label>
+    <input type="date" id="dateFrom">
+    <label>To:</label>
+    <input type="date" id="dateTo">
+    <button onclick="loadOrders(true)">Reset</button>
+
+    <table id="sheetTable">
+        <thead></thead>
+        <tbody></tbody>
+        <tfoot></tfoot>
+    </table>
+
+    <div class="pagination" id="pagination"></div>
+
+    <script>
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxmxXG1J8q4fIhwZc11yqC2nrJIHP6-DYqngwdwm52izG35rdDn_s1rAwk_92sOmRpv/exec';
+        const rowsPerPage = 10;
+
+        let allData = [];
+        let filteredData = [];
+        let columns = [];
+        let currentPage = 1;
+        let sortColumn = null;
+        let sortAsc = false; // default descending (newest first)
+
+        function parseDateFlex(v) {
+            if (v === null || v === undefined || v === '') return null;
+            if (v instanceof Date && !isNaN(v)) return new Date(v.getTime());
+
+            if (typeof v === 'number') {
+                if (v > 1e12) return new Date(v);
+                const epoch = Date.UTC(1899, 11, 30);
+                return new Date(epoch + v * 86400000);
+            }
+
+            const s = String(v).trim();
+            const g = s.match(/^Date\(\s*(\d{4})\s*,\s*(\d{1,2})\s*,\s*(\d{1,2})/i);
+            if (g) return new Date(Number(g[1]), Number(g[2]), Number(g[3]));
+
+            if (/^\d{4}-\d{2}-\d{2}T/.test(s) || /^\d{4}-\d{2}-\d{2}$/.test(s)) {
+                const d = new Date(s);
+                return isNaN(d) ? null : d;
+            }
+
+            let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+            if (m) {
+                let day = Number(m[1]), month = Number(m[2]), year = Number(m[3]);
+                if (year < 100) year += 2000;
+                return new Date(year, month - 1, day);
+            }
+
+            const parsed = Date.parse(s);
+            if (!isNaN(parsed)) return new Date(parsed);
+
+            return null;
+        }
+
+        function formatDisplayDate(dateObj) {
+            if (!dateObj) return '';
+            return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
+        }
+
+        async function fetchOrders() {
+            try {
+                const res = await fetch(APPS_SCRIPT_URL);
+                const data = await res.json();
+
+                allData = (data || []).map(row => {
+                    const dateObj = parseDateFlex(row.date);
+                    return {
+                        dateRaw: row.date,
+                        date: row.date,
+                        dateObj: dateObj,
+                        invoiceNo: row.invoiceNo,
+                        customerName: row.customerName,
+                        email: row.email,
+                        items: row.items,
+                        subtotal: parseFloat(row.subtotal) || 0,
+                        discount: parseFloat(row.discount) || 0,
+                        tax: parseFloat(row.tax) || 0,
+                        grandTotal: parseFloat(row.grandTotal) || 0,
+                        paymentStatus: row.paymentStatus,
+                        notes: row.notes
+                    };
+                });
+
+                columns = ["Date", "Invoice No", "Customer Name", "Email", "Items", "Subtotal", "Discount", "Tax", "Grand Total", "Payment Status", "Notes", "Invoice PDF"];
+                createTableHeader(columns);
+
+                loadOrders(true); // load newest first
+            } catch (err) {
+                console.error('Fetch error', err);
+            }
+        }
+
+        function createTableHeader(cols) {
+            const thead = document.querySelector('#sheetTable thead');
+            thead.innerHTML = '';
+            const tr = document.createElement('tr');
+            cols.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                if (col !== 'Invoice PDF') th.addEventListener('click', () => sortByColumn(col));
+                tr.appendChild(th);
+            });
+            thead.appendChild(tr);
+        }
+
+        function displayTable() {
+            const tbody = document.querySelector('#sheetTable tbody');
+            const tfoot = document.querySelector('#sheetTable tfoot');
+            tbody.innerHTML = '';
+            tfoot.innerHTML = '';
+
+            const start = (currentPage - 1) * rowsPerPage;
+            const end = start + rowsPerPage;
+            const pageData = filteredData.slice(start, end);
+
+            pageData.forEach(row => {
+                const tr = document.createElement('tr');
+                if (row.paymentStatus === 'Pending') tr.classList.add('pending');
+                else if (row.paymentStatus === 'Paid') tr.classList.add('paid');
+
+                columns.forEach(col => {
+                    const td = document.createElement('td');
+                    if (col === 'Invoice PDF') {
+                        const btn = document.createElement('button');
+                        btn.textContent = 'Download';
+                        btn.onclick = () => downloadInvoice(row.invoiceNo);
+                        td.appendChild(btn);
+                    } else if (col === 'Items') {
+                        const items = (row.items || '').split(',').map(i => i.trim()).filter(Boolean).sort();
+                        td.innerHTML = items.map(i => `<span class="item-link">${escapeHtml(i)}</span>`).join('<br>');
+                    } else if (['Subtotal', 'Discount', 'Tax', 'Grand Total'].includes(col)) {
+                        const key = convertColumn(col);
+                        td.textContent = `₹${(parseFloat(row[key]) || 0).toFixed(2)}`;
+                    } else if (col === 'Date') {
+                        td.textContent = row.dateObj ? formatDisplayDate(row.dateObj) : (row.dateRaw || '');
+                    } else {
+                        const key = convertColumn(col);
+                        const val = row[key] == null ? '' : String(row[key]);
+                        td.textContent = val.length > 30 ? val.slice(0, 30) + '...' : val;
+                        if (val.length > 30) td.title = val;
+                    }
+                    tr.appendChild(td);
+                });
+
+                tbody.appendChild(tr);
+            });
+
+            const total = filteredData.reduce((s, r) => s + (parseFloat(r.grandTotal) || 0), 0);
+            const trTotal = document.createElement('tr');
+            trTotal.classList.add('total-row');
+            const tdTotal = document.createElement('td');
+            tdTotal.colSpan = columns.length;
+            tdTotal.textContent = 'Grand Total: ₹' + total.toFixed(2);
+            trTotal.appendChild(tdTotal);
+            tfoot.appendChild(trTotal);
+
+            renderPagination();
+        }
+
+        function convertColumn(col) {
+            return {
+                "Date": "date",
+                "Invoice No": "invoiceNo",
+                "Customer Name": "customerName",
+                "Email": "email",
+                "Items": "items",
+                "Subtotal": "subtotal",
+                "Discount": "discount",
+                "Tax": "tax",
+                "Grand Total": "grandTotal",
+                "Payment Status": "paymentStatus",
+                "Notes": "notes"
+            }[col];
+        }
+
+        function renderPagination() {
+            const pagination = document.getElementById('pagination');
+            pagination.innerHTML = '';
+            const totalPages = Math.max(1, Math.ceil(filteredData.length / rowsPerPage));
+            for (let i = 1; i <= totalPages; i++) {
+                const btn = document.createElement('button');
+                btn.textContent = i;
+                if (i === currentPage) btn.classList.add('active-page');
+                btn.addEventListener('click', () => { currentPage = i; displayTable(); });
+                pagination.appendChild(btn);
+            }
+        }
+
+        function sortByColumn(col) {
+            const key = convertColumn(col);
+            sortAsc = (sortColumn === key) ? !sortAsc : false; // descending first
+            sortColumn = key;
+
+            filteredData.sort((a, b) => {
+                if (key === 'date') {
+                    const av = a.dateObj ? a.dateObj.getTime() : -Infinity;
+                    const bv = b.dateObj ? b.dateObj.getTime() : -Infinity;
+                    return sortAsc ? av - bv : bv - av;
+                }
+                const va = a[key] == null ? '' : a[key];
+                const vb = b[key] == null ? '' : b[key];
+                const na = parseFloat(va);
+                const nb = parseFloat(vb);
+                if (!isNaN(na) && !isNaN(nb)) return sortAsc ? na - nb : nb - na;
+
+                const sa = String(va).toLowerCase();
+                const sb = String(vb).toLowerCase();
+                if (sa < sb) return sortAsc ? -1 : 1;
+                if (sa > sb) return sortAsc ? 1 : -1;
+                return 0;
+            });
+
+            currentPage = 1;
+            displayTable();
+        }
+
+        function loadOrders(reset = false) {
+            if (reset) {
+                document.getElementById('searchInput').value = '';
+                document.getElementById('paymentFilter').value = '';
+                document.getElementById('dateFrom').value = '';
+                document.getElementById('dateTo').value = '';
+                filteredData = [...allData];
+            } else {
+                const searchValue = document.getElementById('searchInput').value.trim().toLowerCase();
+                const paymentValue = document.getElementById('paymentFilter').value;
+                const dateFromInput = document.getElementById('dateFrom').value;
+                const dateToInput = document.getElementById('dateTo').value;
+
+                const dateFrom = dateFromInput ? (() => { const d = new Date(dateFromInput); d.setHours(0, 0, 0, 0); return d; })() : null;
+                const dateTo = dateToInput ? (() => { const d = new Date(dateToInput); d.setHours(23, 59, 59, 999); return d; })() : null;
+
+                filteredData = allData.filter(r => {
+                    const nameMatch = !searchValue || ((r.customerName || '').toLowerCase().includes(searchValue) || (r.email || '').toLowerCase().includes(searchValue));
+                    const paymentMatch = !paymentValue || r.paymentStatus === paymentValue;
+                    let dateMatch = true;
+                    if (dateFrom || dateTo) {
+                        if (!r.dateObj) return false;
+                        if (dateFrom && r.dateObj < dateFrom) dateMatch = false;
+                        if (dateTo && r.dateObj > dateTo) dateMatch = false;
+                    }
+                    return nameMatch && paymentMatch && dateMatch;
+                });
+            }
+
+            // ✅ just reverse to show sheet's last row first
+            filteredData = filteredData.slice().reverse();
+
+            currentPage = 1;
+            displayTable();
+        }
+
+
+        async function downloadInvoice(invoiceNo) {
+            try {
+                const res = await fetch(`${APPS_SCRIPT_URL}?invoice=${encodeURIComponent(invoiceNo)}`);
+                const data = await res.json();
+                if (data && data.url) window.open(data.url, '_blank');
+                else alert('Invoice PDF not found.');
+            } catch (err) {
+                console.error(err);
+                alert('Error fetching invoice PDF.');
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s || '').replace(/[&<>"']/g, function (ch) {
+                return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
+            });
+        }
+
+        document.getElementById('searchInput').addEventListener('input', () => loadOrders());
+        document.getElementById('paymentFilter').addEventListener('change', () => loadOrders());
+        document.getElementById('dateFrom').addEventListener('change', () => loadOrders());
+        document.getElementById('dateTo').addEventListener('change', () => loadOrders());
+
+        fetchOrders();
+    </script>
+</body>
+
+</html>
