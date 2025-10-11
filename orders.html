@@ -8,10 +8,32 @@
             font-family: Arial, sans-serif;
         }
 
+        h1 {
+            margin-bottom: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 8px 16px;
+            background-color: #f2f2f2;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .tab.active {
+            background-color: #007bff;
+            color: #fff;
+        }
+
         table {
             border-collapse: collapse;
             width: 100%;
-            margin-top: 20px;
+            margin-top: 10px;
         }
 
         th,
@@ -54,6 +76,10 @@
             background-color: #e6ffe6;
         }
 
+        .delivered {
+            background-color: #e6f7ff;
+        }
+
         .total-row td {
             font-weight: bold;
             background-color: #f9f9f9;
@@ -62,26 +88,45 @@
         .item-link {
             text-transform: capitalize;
         }
+
+        #filters {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
     </style>
 </head>
 
 <body>
     <h1>Live Orders Dashboard</h1>
 
+    <!-- Tabs -->
+    <div class="tabs">
+        <div class="tab active" id="tab-delivered" onclick="switchTab('delivered')">Delivered Orders</div>
+        <div class="tab" id="tab-orders" onclick="switchTab('orders')">Orders</div>
+    </div>
+
+
     <!-- Filters -->
-    <label>Search:</label>
-    <input type="text" id="searchInput" placeholder="Name / Email">
-    <label>Payment:</label>
-    <select id="paymentFilter">
-        <option value="">All</option>
-        <option value="Paid">Paid</option>
-        <option value="Pending">Pending</option>
-    </select>
-    <label>Date From:</label>
-    <input type="date" id="dateFrom">
-    <label>To:</label>
-    <input type="date" id="dateTo">
-    <button onclick="loadOrders(true)">Reset</button>
+    <div id="filters">
+        <label>Search:</label>
+        <input type="text" id="searchInput" placeholder="Name / Email">
+        <div id="paymentFilterWrapper">
+            <label>Payment:</label>
+            <select id="paymentFilter">
+                <option value="">All</option>
+                <option value="Paid">Paid</option>
+                <option value="Pending">Pending</option>
+            </select>
+        </div>
+
+        <label>Date From:</label>
+        <input type="date" id="dateFrom">
+        <label>To:</label>
+        <input type="date" id="dateTo">
+        <button onclick="loadOrders(true)">Reset</button>
+    </div>
 
     <table id="sheetTable">
         <thead></thead>
@@ -92,7 +137,7 @@
     <div class="pagination" id="pagination"></div>
 
     <script>
-        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwSxismjfhS3YSh30FgbyDHD5UcTzFl9WxNiAuEy7vmEj65WVeRNbunMGx8DITajrby/exec';
+        const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxJ8N_uoMC0nPbiNvagwhp8xleIwmhRRqbjIb0yu1aMPkCbYGDGo7b5NtYsUm9qaSFs/exec';
         const rowsPerPage = 10;
 
         let allData = [];
@@ -100,38 +145,35 @@
         let columns = [];
         let currentPage = 1;
         let sortColumn = null;
-        let sortAsc = false; // default descending (newest first)
+        let sortAsc = false;
+        let activeTab = 'orders'; // default tab
 
+        // ----------------------
+        // 🔹 Utility Functions
+        // ----------------------
         function parseDateFlex(v) {
-            if (v === null || v === undefined || v === '') return null;
+            if (!v) return null;
             if (v instanceof Date && !isNaN(v)) return new Date(v.getTime());
-
             if (typeof v === 'number') {
                 if (v > 1e12) return new Date(v);
                 const epoch = Date.UTC(1899, 11, 30);
                 return new Date(epoch + v * 86400000);
             }
-
             const s = String(v).trim();
-            const g = s.match(/^Date\(\s*(\d{4})\s*,\s*(\d{1,2})\s*,\s*(\d{1,2})/i);
-            if (g) return new Date(Number(g[1]), Number(g[2]), Number(g[3]));
-
-            if (/^\d{4}-\d{2}-\d{2}T/.test(s) || /^\d{4}-\d{2}-\d{2}$/.test(s)) {
+            const g = s.match(/^Date\((\d{4}),(\d{1,2}),(\d{1,2})/i);
+            if (g) return new Date(+g[1], +g[2], +g[3]);
+            if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
                 const d = new Date(s);
                 return isNaN(d) ? null : d;
             }
-
-            let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+            const m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})$/);
             if (m) {
-                let day = Number(m[1]), month = Number(m[2]), year = Number(m[3]);
+                let [, day, month, year] = m.map(Number);
                 if (year < 100) year += 2000;
                 return new Date(year, month - 1, day);
             }
-
             const parsed = Date.parse(s);
-            if (!isNaN(parsed)) return new Date(parsed);
-
-            return null;
+            return isNaN(parsed) ? null : new Date(parsed);
         }
 
         function formatDisplayDate(dateObj) {
@@ -139,17 +181,51 @@
             return dateObj.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-');
         }
 
-        async function fetchOrders() {
-            try {
-                const res = await fetch(APPS_SCRIPT_URL);
-                const data = await res.json();
+        function parseDateTime(dateStr, timeStr) {
+            const date = parseDateFlex(dateStr);
+            if (!date) return null;
+            if (!timeStr) return date;
 
-                allData = (data || []).map(row => {
-                    const dateObj = parseDateFlex(row.date);
-                    return {
-                        dateRaw: row.date,
+            const t = new Date(timeStr);
+            if (!isNaN(t)) {
+                date.setHours(t.getHours(), t.getMinutes(), t.getSeconds(), 0);
+                return date;
+            }
+
+            const match = String(timeStr).trim().toUpperCase().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+            if (match) {
+                let hours = +match[1], minutes = +match[2];
+                if (match[3] === 'PM' && hours < 12) hours += 12;
+                if (match[3] === 'AM' && hours === 12) hours = 0;
+                date.setHours(hours, minutes, 0, 0);
+            }
+            return date;
+        }
+
+        function escapeHtml(s) {
+            return String(s || '').replace(/[&<>"']/g, ch =>
+                ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+        }
+
+        // ----------------------
+        // 🔹 Fetch Orders
+        // ----------------------
+        async function fetchOrders(sheetName) {
+            try {
+                const res = await fetch(`${APPS_SCRIPT_URL}?sheet=${encodeURIComponent(sheetName)}`);
+                const data = await res.json();
+                if (!data || !data.length) {
+                    allData = [];
+                    filteredData = [];
+                    displayTable();
+                    return;
+                }
+
+                if (sheetName === 'Orders') {
+                    // Delivered Orders sheet
+                    allData = data.map(row => ({
+                        dateObj: parseDateFlex(row.date),
                         date: row.date,
-                        dateObj: dateObj,
                         invoiceNo: row.invoiceNo,
                         customerName: row.customerName,
                         email: row.email,
@@ -160,18 +236,40 @@
                         grandTotal: parseFloat(row.grandTotal) || 0,
                         paymentStatus: row.paymentStatus,
                         notes: row.notes
-                    };
-                });
+                    }));
+                    columns = ["Date", "Invoice No", "Customer Name", "Email", "Items", "Subtotal", "Discount", "Tax", "Grand Total", "Payment Status", "Notes", "Invoice PDF"];
+                } else if (sheetName === 'Future Orders') {
+                    // Upcoming Orders sheet
+                    allData = data.map(row => {
+                        const parsed = parseDateTime(row.deliveryDate, row.deliveryTime);
+                        return {
+                            dateObj: parseDateFlex(row.date),
+                            date: row.date,
+                            customerName: row.customerName,
+                            email: row.email,
+                            deliveryDateObj: parsed,
+                            deliveryDate: row.deliveryDate,
+                            deliveryTime: row.deliveryTime,
+                            items: row.items,
+                            notes: row.notes,
+                            deliveryStatus: row.deliveryStatus
+                        };
+                    });
+                    columns = ["Date", "Customer Name", "Email", "Delivery Date", "Delivery Time", "Items", "Notes", "Delivery Status"];
+                }
 
-                columns = ["Date", "Invoice No", "Customer Name", "Email", "Items", "Subtotal", "Discount", "Tax", "Grand Total", "Payment Status", "Notes", "Invoice PDF"];
                 createTableHeader(columns);
-
-                loadOrders(true); // load newest first
+                filteredData = [...allData].reverse();
+                currentPage = 1;
+                displayTable();
             } catch (err) {
                 console.error('Fetch error', err);
             }
         }
 
+        // ----------------------
+        // 🔹 Display Functions
+        // ----------------------
         function createTableHeader(cols) {
             const thead = document.querySelector('#sheetTable thead');
             thead.innerHTML = '';
@@ -214,7 +312,15 @@
                         const key = convertColumn(col);
                         td.textContent = `₹${(parseFloat(row[key]) || 0).toFixed(2)}`;
                     } else if (col === 'Date') {
-                        td.textContent = row.dateObj ? formatDisplayDate(row.dateObj) : (row.dateRaw || '');
+                        td.textContent = row.dateObj ? formatDisplayDate(row.dateObj) : (row.date || '');
+                    } else if (col === 'Delivery Date') {
+                        td.textContent = row.deliveryDateObj ? formatDisplayDate(row.deliveryDateObj) : (row.deliveryDate || '');
+                    } else if (col === 'Delivery Time') {
+                        if (row.deliveryDateObj instanceof Date && !isNaN(row.deliveryDateObj)) {
+                            td.textContent = row.deliveryDateObj.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                        } else {
+                            td.textContent = row.deliveryTime || '';
+                        }
                     } else {
                         const key = convertColumn(col);
                         const val = row[key] == null ? '' : String(row[key]);
@@ -223,18 +329,19 @@
                     }
                     tr.appendChild(td);
                 });
-
                 tbody.appendChild(tr);
             });
 
             const total = filteredData.reduce((s, r) => s + (parseFloat(r.grandTotal) || 0), 0);
-            const trTotal = document.createElement('tr');
-            trTotal.classList.add('total-row');
-            const tdTotal = document.createElement('td');
-            tdTotal.colSpan = columns.length;
-            tdTotal.textContent = 'Grand Total: ₹' + total.toFixed(2);
-            trTotal.appendChild(tdTotal);
-            tfoot.appendChild(trTotal);
+            if (total > 0) {
+                const trTotal = document.createElement('tr');
+                trTotal.classList.add('total-row');
+                const tdTotal = document.createElement('td');
+                tdTotal.colSpan = columns.length;
+                tdTotal.textContent = 'Grand Total: ₹' + total.toFixed(2);
+                trTotal.appendChild(tdTotal);
+                tfoot.appendChild(trTotal);
+            }
 
             renderPagination();
         }
@@ -251,7 +358,11 @@
                 "Tax": "tax",
                 "Grand Total": "grandTotal",
                 "Payment Status": "paymentStatus",
-                "Notes": "notes"
+                "Notes": "notes",
+                "Invoice PDF": "invoiceNo",
+                "Delivery Date": "deliveryDate",
+                "Delivery Time": "deliveryTime",
+                "Delivery Status": "deliveryStatus"
             }[col];
         }
 
@@ -270,7 +381,7 @@
 
         function sortByColumn(col) {
             const key = convertColumn(col);
-            sortAsc = (sortColumn === key) ? !sortAsc : false; // descending first
+            sortAsc = (sortColumn === key) ? !sortAsc : false;
             sortColumn = key;
 
             filteredData.sort((a, b) => {
@@ -279,60 +390,74 @@
                     const bv = b.dateObj ? b.dateObj.getTime() : -Infinity;
                     return sortAsc ? av - bv : bv - av;
                 }
-                const va = a[key] == null ? '' : a[key];
-                const vb = b[key] == null ? '' : b[key];
+                const va = a[key] ?? '';
+                const vb = b[key] ?? '';
                 const na = parseFloat(va);
                 const nb = parseFloat(vb);
                 if (!isNaN(na) && !isNaN(nb)) return sortAsc ? na - nb : nb - na;
-
                 const sa = String(va).toLowerCase();
                 const sb = String(vb).toLowerCase();
-                if (sa < sb) return sortAsc ? -1 : 1;
-                if (sa > sb) return sortAsc ? 1 : -1;
-                return 0;
+                return sortAsc ? sa.localeCompare(sb) : sb.localeCompare(sa);
             });
 
             currentPage = 1;
             displayTable();
         }
 
+        // ----------------------
+        // 🔹 Filtering
+        // ----------------------
         function loadOrders(reset = false) {
             if (reset) {
                 document.getElementById('searchInput').value = '';
                 document.getElementById('paymentFilter').value = '';
                 document.getElementById('dateFrom').value = '';
                 document.getElementById('dateTo').value = '';
-                filteredData = [...allData];
-            } else {
-                const searchValue = document.getElementById('searchInput').value.trim().toLowerCase();
-                const paymentValue = document.getElementById('paymentFilter').value;
-                const dateFromInput = document.getElementById('dateFrom').value;
-                const dateToInput = document.getElementById('dateTo').value;
-
-                const dateFrom = dateFromInput ? (() => { const d = new Date(dateFromInput); d.setHours(0, 0, 0, 0); return d; })() : null;
-                const dateTo = dateToInput ? (() => { const d = new Date(dateToInput); d.setHours(23, 59, 59, 999); return d; })() : null;
-
-                filteredData = allData.filter(r => {
-                    const nameMatch = !searchValue || ((r.customerName || '').toLowerCase().includes(searchValue) || (r.email || '').toLowerCase().includes(searchValue));
-                    const paymentMatch = !paymentValue || r.paymentStatus === paymentValue;
-                    let dateMatch = true;
-                    if (dateFrom || dateTo) {
-                        if (!r.dateObj) return false;
-                        if (dateFrom && r.dateObj < dateFrom) dateMatch = false;
-                        if (dateTo && r.dateObj > dateTo) dateMatch = false;
-                    }
-                    return nameMatch && paymentMatch && dateMatch;
-                });
             }
 
-            // ✅ just reverse to show sheet's last row first
-            filteredData = filteredData.slice().reverse();
+            const searchValue = document.getElementById('searchInput').value.trim().toLowerCase();
+            const paymentValue = document.getElementById('paymentFilter').value;
+            const dateFrom = document.getElementById('dateFrom').value ? new Date(document.getElementById('dateFrom').value + 'T00:00:00') : null;
+            const dateTo = document.getElementById('dateTo').value ? new Date(document.getElementById('dateTo').value + 'T23:59:59') : null;
 
+            filteredData = allData.filter(r => {
+                const searchMatch = !searchValue ||
+                    (r.customerName || '').toLowerCase().includes(searchValue) ||
+                    (r.email || '').toLowerCase().includes(searchValue);
+
+                let dateMatch = true;
+                let paymentMatch = true;
+
+                if (activeTab === 'delivered') {
+                    // Delivered Orders (Orders sheet)
+                    if (paymentValue) paymentMatch = r.paymentStatus === paymentValue;
+                    if (dateFrom || dateTo) {
+                        const d = r.dateObj;
+                        if (!d) return false;
+                        if (dateFrom && d < dateFrom) dateMatch = false;
+                        if (dateTo && d > dateTo) dateMatch = false;
+                    }
+                } else {
+                    // Upcoming Orders (Future Orders sheet)
+                    const d = r.deliveryDateObj;
+                    if (dateFrom || dateTo) {
+                        if (!d) return false;
+                        if (dateFrom && d < dateFrom) dateMatch = false;
+                        if (dateTo && d > dateTo) dateMatch = false;
+                    }
+                }
+
+                return searchMatch && paymentMatch && dateMatch;
+            });
+
+            filteredData = filteredData.slice().reverse();
             currentPage = 1;
             displayTable();
         }
 
-
+        // ----------------------
+        // 🔹 Invoice Download
+        // ----------------------
         async function downloadInvoice(invoiceNo) {
             try {
                 const res = await fetch(`${APPS_SCRIPT_URL}?invoice=${encodeURIComponent(invoiceNo)}`);
@@ -345,19 +470,34 @@
             }
         }
 
-        function escapeHtml(s) {
-            return String(s || '').replace(/[&<>"']/g, function (ch) {
-                return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch];
-            });
+        // ----------------------
+        // 🔹 Tab Switching
+        // ----------------------
+        function switchTab(tab) {
+            activeTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab-' + tab).classList.add('active');
+
+            // Show payment filter only for delivered orders
+            document.getElementById('paymentFilterWrapper').style.display = (tab === 'delivered') ? 'block' : 'none';
+
+            // Fetch corresponding sheet
+            if (tab === 'orders') fetchOrders('Future Orders');      // Upcoming
+            else if (tab === 'delivered') fetchOrders('Orders');     // Completed
         }
 
+        // ----------------------
+        // 🔹 Event Listeners
+        // ----------------------
         document.getElementById('searchInput').addEventListener('input', () => loadOrders());
         document.getElementById('paymentFilter').addEventListener('change', () => loadOrders());
         document.getElementById('dateFrom').addEventListener('change', () => loadOrders());
         document.getElementById('dateTo').addEventListener('change', () => loadOrders());
 
-        fetchOrders();
+        // Load default tab
+        fetchOrders('Orders');
     </script>
+
 </body>
 
 </html>
